@@ -1,0 +1,111 @@
+.edtech-dashboard .card,
+.edtech-dashboard .glass-card,
+.edtech-auth .card,
+.edtech-auth .glass-card,
+.edtech-plugin-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-normal);
+    border-radius: var(--border-radius);
+    transition: all 0.3s ease;
+}
+
+.edtech-dashboard .card:hover,
+.edtech-dashboard .glass-card:hover {
+    box-shadow: var(--shadow-hover);
+    border-color: var(--brand-primary);
+}
+
+.edtech-dashboard-header {
+    background: linear-gradient(135deg, var(--brand-primary), var(--brand-secondary));
+    color: white;
+    border-radius: var(--border-radius);
+    padding: 2rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+}
+
+.stat-card .text-info { color: var(--brand-primary) !important; }
+.stat-card .text-success { color: #10b981 !important; }
+.stat-card .text-warning { color: #f59e0b !important; }
+.stat-card .text-danger { color: #ef4444 !important; }
+
+.hover-highlight:hover {
+    background: rgba(79, 70, 229, 0.05);
+    border-radius: var(--border-radius);
+}
+
+.edtech-dashboard .section-title,
+.edtech-auth .section-title {
+    color: var(--text-light);
+}
+
+.edtech-auth form input,
+.edtech-auth form textarea,
+.edtech-auth form select {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    color: var(--text-light);
+    border-radius: var(--border-radius);
+}
+
+.edtech-auth form input:focus,
+.edtech-auth form textarea:focus,
+.edtech-auth form select:focus {
+    border-color: var(--brand-primary);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.edtech-auth form label {
+    color: var(--text-light);
+}
+
+.edtech-dashboard form input,
+.edtech-dashboard form textarea,
+.edtech-dashboard form select {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    color: var(--text-light);
+    border-radius: var(--border-radius);
+}
+
+.edtech-dashboard form input:focus,
+.edtech-dashboard form textarea:focus,
+.edtech-dashboard form select:focus {
+    border-color: var(--brand-primary);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.edtech-dashboard form label {
+    color: var(--text-light);
+}
+
+/* Dark mode adjustments */
+[data-theme="dark"] .edtech-dashboard-header {
+    background: linear-gradient(135deg, rgba(91, 127, 255, 0.1), rgba(57, 189, 255, 0.05));
+    border: 1px solid rgba(91, 127, 255, 0.2);
+    color: var(--text-light);
+}
+
+[data-theme="dark"] .hover-highlight:hover {
+    background: rgba(91, 127, 255, 0.08);
+}
+
+.edtech-alert {
+    margin-top: 1rem;
+}
+
+.badge {
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.table tbody tr {
+    transition: background-color 0.2s ease;
+}

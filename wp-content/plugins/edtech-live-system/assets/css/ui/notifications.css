@@ -1,0 +1,177 @@
+.edtech-toast-viewport {
+    position: fixed;
+    z-index: 99999;
+    display: grid;
+    gap: 12px;
+    width: min(420px, calc(100vw - 32px));
+    pointer-events: none;
+}
+
+.edtech-toast-viewport[data-position="top-right"] {
+    top: 20px;
+    right: 20px;
+}
+
+.edtech-toast-viewport[data-position="top-center"] {
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.edtech-toast-viewport[data-position="bottom-right"] {
+    right: 20px;
+    bottom: 20px;
+}
+
+.edtech-toast {
+    --toast-accent: #6366f1;
+    position: relative;
+    display: grid;
+    grid-template-columns: 42px 1fr auto;
+    gap: 12px;
+    align-items: start;
+    padding: 14px;
+    overflow: hidden;
+    color: #111827;
+    background: rgba(255, 255, 255, 0.84);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 18px;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.16);
+    backdrop-filter: blur(18px);
+    pointer-events: auto;
+    opacity: 0;
+    transform: translate3d(18px, -8px, 0) scale(0.98);
+    transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.edtech-toast.is-visible {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+}
+
+.edtech-toast.is-leaving {
+    opacity: 0;
+    transform: translate3d(16px, -6px, 0) scale(0.98);
+}
+
+.edtech-toast__icon {
+    display: inline-grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    color: var(--toast-accent);
+    background: color-mix(in srgb, var(--toast-accent) 12%, transparent);
+    border-radius: 14px;
+}
+
+.edtech-toast__title {
+    margin: 1px 0 2px;
+    color: #0f172a;
+    font-size: 0.95rem;
+    font-weight: 750;
+}
+
+.edtech-toast__message {
+    margin: 0;
+    color: #64748b;
+    font-size: 0.88rem;
+    line-height: 1.45;
+}
+
+.edtech-toast__close {
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    color: #64748b;
+    background: transparent;
+    border: 0;
+    border-radius: 10px;
+}
+
+.edtech-toast__close:hover {
+    color: #0f172a;
+    background: rgba(15, 23, 42, 0.06);
+}
+
+.edtech-toast__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.edtech-toast__action {
+    padding: 7px 10px;
+    color: #fff;
+    background: var(--toast-accent);
+    border: 0;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.edtech-toast__progress {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 3px;
+    width: 100%;
+    background: linear-gradient(90deg, var(--toast-accent), color-mix(in srgb, var(--toast-accent) 30%, #fff));
+    transform-origin: left;
+    animation: edtech-toast-progress linear forwards;
+}
+
+.edtech-toast--success { --toast-accent: #16a34a; }
+.edtech-toast--error { --toast-accent: #dc2626; }
+.edtech-toast--warning { --toast-accent: #d97706; }
+.edtech-toast--info { --toast-accent: #6366f1; }
+.edtech-toast--loading { --toast-accent: #8b5cf6; }
+
+.edtech-toast--loading .edtech-toast__icon svg {
+    animation: edtech-spin 0.9s linear infinite;
+}
+
+@keyframes edtech-toast-progress {
+    to { transform: scaleX(0); }
+}
+
+@keyframes edtech-spin {
+    to { transform: rotate(360deg); }
+}
+
+[data-theme="dark"] .edtech-toast {
+    color: #eef2ff;
+    background: rgba(15, 23, 42, 0.82);
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.36);
+}
+
+[data-theme="dark"] .edtech-toast__title {
+    color: #f8fafc;
+}
+
+[data-theme="dark"] .edtech-toast__message,
+[data-theme="dark"] .edtech-toast__close {
+    color: #cbd5e1;
+}
+
+@media (max-width: 575px) {
+    .edtech-toast-viewport,
+    .edtech-toast-viewport[data-position="top-right"],
+    .edtech-toast-viewport[data-position="top-center"],
+    .edtech-toast-viewport[data-position="bottom-right"] {
+        top: 12px;
+        right: 12px;
+        left: 12px;
+        bottom: auto;
+        width: auto;
+        transform: none;
+    }
+
+    .edtech-toast {
+        grid-template-columns: 38px 1fr auto;
+        border-radius: 16px;
+    }
+}
