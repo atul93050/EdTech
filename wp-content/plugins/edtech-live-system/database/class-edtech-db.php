@@ -4,7 +4,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'LMS_DB_VERSION' ) ) {
-    define( 'LMS_DB_VERSION', '1.2.0' );
+    define( 'LMS_DB_VERSION', '1.3.0' );
 }
 
 class Edtech_DB {
@@ -46,6 +46,7 @@ class Edtech_DB {
         return array(
             'lms_students',
             'lms_teachers',
+            'lms_subject_categories',
             'lms_subjects',
             'lms_student_subjects',
             'lms_teacher_subjects',
@@ -119,16 +120,36 @@ class Edtech_DB {
                     KEY email (email)
                 ) {$this->charset}";
 
-            case 'lms_subjects':
-                return "CREATE TABLE {$this->prefix}lms_subjects (
+            case 'lms_subject_categories':
+                return "CREATE TABLE {$this->prefix}lms_subject_categories (
                     id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
-                    title VARCHAR(191) NOT NULL,
-                    description TEXT,
-                    teacher_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+                    name VARCHAR(191) NOT NULL,
+                    slug VARCHAR(191) NOT NULL,
                     status VARCHAR(20) NOT NULL DEFAULT 'active',
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     PRIMARY KEY  (id),
+                    UNIQUE KEY slug (slug),
+                    KEY status (status)
+                ) {$this->charset}";
+
+            case 'lms_subjects':
+                return "CREATE TABLE {$this->prefix}lms_subjects (
+                    id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+                    title VARCHAR(191) NOT NULL,
+                    slug VARCHAR(191) NOT NULL,
+                    description TEXT,
+                    category_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+                    teacher_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+                    thumbnail VARCHAR(500) DEFAULT '',
+                    icon VARCHAR(255) DEFAULT '',
+                    created_by BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+                    status VARCHAR(20) NOT NULL DEFAULT 'active',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY  (id),
+                    UNIQUE KEY slug (slug),
+                    KEY category_id (category_id),
                     KEY teacher_id (teacher_id),
                     KEY status (status)
                 ) {$this->charset}";
@@ -138,11 +159,14 @@ class Edtech_DB {
                     id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
                     student_id BIGINT(20) UNSIGNED NOT NULL,
                     subject_id BIGINT(20) UNSIGNED NOT NULL,
+                    enrollment_status VARCHAR(20) NOT NULL DEFAULT 'active',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY  (id),
                     UNIQUE KEY student_subject (student_id, subject_id),
                     KEY student_id (student_id),
-                    KEY subject_id (subject_id)
+                    KEY subject_id (subject_id),
+                    KEY enrollment_status (enrollment_status)
                 ) {$this->charset}";
 
             case 'lms_teacher_subjects':
@@ -150,11 +174,14 @@ class Edtech_DB {
                     id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
                     teacher_id BIGINT(20) UNSIGNED NOT NULL,
                     subject_id BIGINT(20) UNSIGNED NOT NULL,
+                    assigned_by BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY  (id),
                     UNIQUE KEY teacher_subject (teacher_id, subject_id),
                     KEY teacher_id (teacher_id),
-                    KEY subject_id (subject_id)
+                    KEY subject_id (subject_id),
+                    KEY assigned_by (assigned_by)
                 ) {$this->charset}";
 
             case 'lms_live_classes':
@@ -314,6 +341,14 @@ class Edtech_DB {
         }
 
         $this->ensure_auth_columns();
+        $this->backfill_lms_slugs();
+
+        foreach ( array( 'lms_subject_categories', 'lms_subjects' ) as $table ) {
+            $sql = $this->get_table_sql( $table );
+            if ( $sql ) {
+                dbDelta( $sql );
+            }
+        }
     }
 
     private function ensure_auth_columns() {
@@ -323,8 +358,22 @@ class Edtech_DB {
         $this->ensure_column( 'lms_teachers', 'status', "status VARCHAR(20) NOT NULL DEFAULT 'pending'" );
         $this->ensure_column( 'lms_teachers', 'updated_at', 'updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP' );
 
+        $this->ensure_column( 'lms_subject_categories', 'status', "status VARCHAR(20) NOT NULL DEFAULT 'active'" );
+        $this->ensure_column( 'lms_subject_categories', 'updated_at', 'updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP' );
+
+        $this->ensure_column( 'lms_subjects', 'category_id', 'category_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0' );
+        $this->ensure_column( 'lms_subjects', 'slug', "slug VARCHAR(191) NOT NULL DEFAULT ''" );
+        $this->ensure_column( 'lms_subjects', 'thumbnail', "thumbnail VARCHAR(500) DEFAULT ''" );
+        $this->ensure_column( 'lms_subjects', 'icon', "icon VARCHAR(255) DEFAULT ''" );
+        $this->ensure_column( 'lms_subjects', 'created_by', 'created_by BIGINT(20) UNSIGNED NOT NULL DEFAULT 0' );
         $this->ensure_column( 'lms_subjects', 'status', "status VARCHAR(20) NOT NULL DEFAULT 'active'" );
         $this->ensure_column( 'lms_subjects', 'updated_at', 'updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP' );
+
+        $this->ensure_column( 'lms_student_subjects', 'enrollment_status', "enrollment_status VARCHAR(20) NOT NULL DEFAULT 'active'" );
+        $this->ensure_column( 'lms_student_subjects', 'created_at', 'created_at DATETIME DEFAULT CURRENT_TIMESTAMP' );
+
+        $this->ensure_column( 'lms_teacher_subjects', 'assigned_by', 'assigned_by BIGINT(20) UNSIGNED NOT NULL DEFAULT 0' );
+        $this->ensure_column( 'lms_teacher_subjects', 'created_at', 'created_at DATETIME DEFAULT CURRENT_TIMESTAMP' );
 
         $this->ensure_column( 'lms_live_classes', 'meeting_link', "meeting_link VARCHAR(500) DEFAULT ''" );
         $this->ensure_column( 'lms_live_classes', 'meeting_url', "meeting_url VARCHAR(500) DEFAULT ''" );
@@ -425,6 +474,390 @@ class Edtech_DB {
         }
     }
 
+    private function normalize_status( $status, $allowed = array( 'active', 'inactive', 'pending', 'approved', 'blocked', 'suspended', 'rejected', 'scheduled', 'live', 'ended', 'published', 'draft' ), $fallback = 'active' ) {
+        $status = sanitize_key( $status );
+        return in_array( $status, $allowed, true ) ? $status : $fallback;
+    }
+
+    private function make_unique_slug( $table, $slug, $source, $exclude_id = 0 ) {
+        global $wpdb;
+
+        $base = sanitize_title( $slug ?: $source );
+        if ( '' === $base ) {
+            $base = 'item';
+        }
+
+        $candidate = $base;
+        $suffix    = 2;
+
+        while ( $this->slug_exists( $table, $candidate, $exclude_id ) ) {
+            $candidate = $base . '-' . $suffix;
+            $suffix++;
+        }
+
+        return $candidate;
+    }
+
+    private function slug_exists( $table, $slug, $exclude_id = 0 ) {
+        global $wpdb;
+
+        $sql    = "SELECT COUNT(*) FROM {$wpdb->prefix}{$table} WHERE slug = %s";
+        $params = array( $slug );
+
+        if ( $exclude_id ) {
+            $sql     .= ' AND id <> %d';
+            $params[] = absint( $exclude_id );
+        }
+
+        return (bool) $wpdb->get_var( $wpdb->prepare( $sql, $params ) );
+    }
+
+    private function normalize_user_ids( $ids ) {
+        if ( ! is_array( $ids ) ) {
+            $ids = array( $ids );
+        }
+
+        $ids = array_map( 'absint', $ids );
+        $ids = array_filter( $ids );
+
+        return array_values( array_unique( $ids ) );
+    }
+
+    private function backfill_lms_slugs() {
+        global $wpdb;
+
+        $targets = array(
+            'lms_subject_categories' => 'name',
+            'lms_subjects'           => 'title',
+        );
+
+        foreach ( $targets as $table => $label_column ) {
+            if ( ! $this->table_exists( $table ) || ! $this->column_exists( $table, 'slug' ) || ! $this->column_exists( $table, $label_column ) ) {
+                continue;
+            }
+
+            $rows = $wpdb->get_results( "SELECT id, {$label_column} AS label, slug FROM {$wpdb->prefix}{$table} ORDER BY id ASC" );
+            foreach ( $rows as $row ) {
+                $current_slug = sanitize_title( $row->slug );
+                if ( '' !== $current_slug && ! $this->slug_exists( $table, $current_slug, absint( $row->id ) ) ) {
+                    continue;
+                }
+
+                $wpdb->update(
+                    $wpdb->prefix . $table,
+                    array( 'slug' => $this->make_unique_slug( $table, $current_slug, $row->label, absint( $row->id ) ) ),
+                    array( 'id' => absint( $row->id ) ),
+                    array( '%s' ),
+                    array( '%d' )
+                );
+            }
+        }
+    }
+
+    public function get_subject_categories( $active_only = true ) {
+        global $wpdb;
+        $where = $active_only ? "WHERE c.status = 'active'" : '';
+        return $wpdb->get_results(
+            "SELECT c.*, COALESCE(subject_counts.subjects_count, 0) AS subjects_count
+            FROM {$wpdb->prefix}lms_subject_categories c
+            LEFT JOIN (
+                SELECT category_id, COUNT(*) AS subjects_count
+                FROM {$wpdb->prefix}lms_subjects
+                GROUP BY category_id
+            ) subject_counts ON subject_counts.category_id = c.id
+            {$where}
+            ORDER BY c.name ASC"
+        );
+    }
+
+    public function get_subject_category_by_id( $category_id ) {
+        global $wpdb;
+        return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$wpdb->prefix}lms_subject_categories WHERE id = %d", $category_id ) );
+    }
+
+    public function create_subject_category( $data ) {
+        global $wpdb;
+
+        $name = sanitize_text_field( $data['name'] ?? '' );
+        if ( '' === $name ) {
+            return false;
+        }
+
+        $result = $wpdb->insert(
+            $wpdb->prefix . 'lms_subject_categories',
+            array(
+                'name'       => $name,
+                'slug'       => $this->make_unique_slug( 'lms_subject_categories', $data['slug'] ?? '', $name ),
+                'status'     => $this->normalize_status( $data['status'] ?? 'active', array( 'active', 'inactive' ), 'active' ),
+                'created_at' => current_time( 'mysql' ),
+                'updated_at' => current_time( 'mysql' ),
+            ),
+            array( '%s', '%s', '%s', '%s', '%s' )
+        );
+
+        return false !== $result ? absint( $wpdb->insert_id ) : false;
+    }
+
+    public function update_subject_category( $category_id, $data ) {
+        global $wpdb;
+        $category_id = absint( $category_id );
+        $name        = sanitize_text_field( $data['name'] ?? '' );
+
+        if ( ! $category_id || '' === $name ) {
+            return false;
+        }
+
+        $result = $wpdb->update(
+            $wpdb->prefix . 'lms_subject_categories',
+            array(
+                'name'       => $name,
+                'slug'       => $this->make_unique_slug( 'lms_subject_categories', $data['slug'] ?? '', $name, $category_id ),
+                'status'     => $this->normalize_status( $data['status'] ?? 'active', array( 'active', 'inactive' ), 'active' ),
+                'updated_at' => current_time( 'mysql' ),
+            ),
+            array( 'id' => $category_id ),
+            array( '%s', '%s', '%s', '%s' ),
+            array( '%d' )
+        );
+
+        return false !== $result;
+    }
+
+    public function delete_subject_category( $category_id ) {
+        global $wpdb;
+        $category_id = absint( $category_id );
+
+        if ( ! $category_id ) {
+            return false;
+        }
+
+        $wpdb->update(
+            $wpdb->prefix . 'lms_subjects',
+            array(
+                'category_id' => 0,
+                'updated_at'  => current_time( 'mysql' ),
+            ),
+            array( 'category_id' => $category_id ),
+            array( '%d', '%s' ),
+            array( '%d' )
+        );
+
+        return false !== $wpdb->delete( $wpdb->prefix . 'lms_subject_categories', array( 'id' => $category_id ), array( '%d' ) );
+    }
+
+    public function create_subject( $data ) {
+        global $wpdb;
+
+        $title = sanitize_text_field( $data['title'] ?? '' );
+        if ( '' === $title ) {
+            return false;
+        }
+
+        $teacher_ids = $this->normalize_user_ids( $data['teacher_ids'] ?? array_filter( array( $data['teacher_id'] ?? 0 ) ) );
+        $teacher_id  = ! empty( $teacher_ids ) ? absint( $teacher_ids[0] ) : 0;
+
+        $result = $wpdb->insert(
+            $wpdb->prefix . 'lms_subjects',
+            array(
+                'title'       => $title,
+                'slug'        => $this->make_unique_slug( 'lms_subjects', $data['slug'] ?? '', $title ),
+                'description' => sanitize_textarea_field( $data['description'] ?? '' ),
+                'category_id' => absint( $data['category_id'] ?? 0 ),
+                'teacher_id'  => $teacher_id,
+                'thumbnail'   => esc_url_raw( $data['thumbnail'] ?? '' ),
+                'icon'        => sanitize_text_field( $data['icon'] ?? '' ),
+                'created_by'  => absint( $data['created_by'] ?? get_current_user_id() ),
+                'status'      => $this->normalize_status( $data['status'] ?? 'active', array( 'active', 'inactive', 'draft' ), 'active' ),
+                'created_at'  => current_time( 'mysql' ),
+                'updated_at'  => current_time( 'mysql' ),
+            ),
+            array( '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%d', '%s', '%s', '%s' )
+        );
+
+        if ( false === $result ) {
+            return false;
+        }
+
+        $subject_id = absint( $wpdb->insert_id );
+        $this->sync_subject_teachers( $subject_id, $teacher_ids, absint( $data['created_by'] ?? get_current_user_id() ) );
+
+        return $subject_id;
+    }
+
+    public function get_subjects_for_admin( $include_inactive = true ) {
+        global $wpdb;
+        $where = $include_inactive ? '' : "WHERE s.status = 'active'";
+        return $wpdb->get_results(
+            "SELECT s.*, c.name AS category_name, u.display_name AS creator_name, teacher_map.teacher_names, teacher_map.teacher_ids
+            FROM {$wpdb->prefix}lms_subjects s
+            LEFT JOIN {$wpdb->prefix}lms_subject_categories c ON s.category_id = c.id
+            LEFT JOIN {$wpdb->users} u ON s.created_by = u.ID
+            LEFT JOIN (
+                SELECT ts.subject_id,
+                    GROUP_CONCAT(DISTINCT COALESCE(t.full_name, tu.display_name) ORDER BY COALESCE(t.full_name, tu.display_name) SEPARATOR ', ') AS teacher_names,
+                    GROUP_CONCAT(DISTINCT ts.teacher_id ORDER BY ts.teacher_id SEPARATOR ',') AS teacher_ids
+                FROM {$wpdb->prefix}lms_teacher_subjects ts
+                LEFT JOIN {$wpdb->prefix}lms_teachers t ON ts.teacher_id = t.user_id
+                LEFT JOIN {$wpdb->users} tu ON ts.teacher_id = tu.ID
+                GROUP BY ts.subject_id
+            ) teacher_map ON s.id = teacher_map.subject_id
+            {$where}
+            ORDER BY s.created_at DESC"
+        );
+    }
+
+    public function get_subject_by_id( $subject_id ) {
+        global $wpdb;
+        return $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT s.*, c.name AS category_name
+                FROM {$wpdb->prefix}lms_subjects s
+                LEFT JOIN {$wpdb->prefix}lms_subject_categories c ON s.category_id = c.id
+                WHERE s.id = %d",
+                absint( $subject_id )
+            )
+        );
+    }
+
+    public function update_subject( $subject_id, $data ) {
+        global $wpdb;
+        $subject_id = absint( $subject_id );
+        $title      = sanitize_text_field( $data['title'] ?? '' );
+
+        if ( ! $subject_id || '' === $title ) {
+            return false;
+        }
+
+        $teacher_ids = $this->normalize_user_ids( $data['teacher_ids'] ?? array_filter( array( $data['teacher_id'] ?? 0 ) ) );
+        $teacher_id  = ! empty( $teacher_ids ) ? absint( $teacher_ids[0] ) : 0;
+
+        $result = $wpdb->update(
+            $wpdb->prefix . 'lms_subjects',
+            array(
+                'title'       => $title,
+                'slug'        => $this->make_unique_slug( 'lms_subjects', $data['slug'] ?? '', $title, $subject_id ),
+                'description' => sanitize_textarea_field( $data['description'] ?? '' ),
+                'category_id' => absint( $data['category_id'] ?? 0 ),
+                'teacher_id'  => $teacher_id,
+                'thumbnail'   => esc_url_raw( $data['thumbnail'] ?? '' ),
+                'icon'        => sanitize_text_field( $data['icon'] ?? '' ),
+                'status'      => $this->normalize_status( $data['status'] ?? 'active', array( 'active', 'inactive', 'draft' ), 'active' ),
+                'updated_at'  => current_time( 'mysql' ),
+            ),
+            array( 'id' => $subject_id ),
+            array( '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%s' ),
+            array( '%d' )
+        );
+
+        if ( false === $result ) {
+            return false;
+        }
+
+        $this->sync_subject_teachers( $subject_id, $teacher_ids, get_current_user_id() );
+
+        return true;
+    }
+
+    public function update_subject_status( $subject_id, $status ) {
+        global $wpdb;
+
+        $subject_id = absint( $subject_id );
+        if ( ! $subject_id ) {
+            return false;
+        }
+
+        return false !== $wpdb->update(
+            $wpdb->prefix . 'lms_subjects',
+            array(
+                'status'     => $this->normalize_status( $status, array( 'active', 'inactive', 'draft' ), 'active' ),
+                'updated_at' => current_time( 'mysql' ),
+            ),
+            array( 'id' => $subject_id ),
+            array( '%s', '%s' ),
+            array( '%d' )
+        );
+    }
+
+    public function update_subject_category_status( $category_id, $status ) {
+        global $wpdb;
+
+        $category_id = absint( $category_id );
+        if ( ! $category_id ) {
+            return false;
+        }
+
+        return false !== $wpdb->update(
+            $wpdb->prefix . 'lms_subject_categories',
+            array(
+                'status'     => $this->normalize_status( $status, array( 'active', 'inactive' ), 'active' ),
+                'updated_at' => current_time( 'mysql' ),
+            ),
+            array( 'id' => $category_id ),
+            array( '%s', '%s' ),
+            array( '%d' )
+        );
+    }
+
+    public function delete_subject( $subject_id ) {
+        global $wpdb;
+        $subject_id = absint( $subject_id );
+
+        if ( ! $subject_id ) {
+            return false;
+        }
+
+        $wpdb->delete( $wpdb->prefix . 'lms_teacher_subjects', array( 'subject_id' => $subject_id ), array( '%d' ) );
+        $wpdb->delete( $wpdb->prefix . 'lms_student_subjects', array( 'subject_id' => $subject_id ), array( '%d' ) );
+
+        return false !== $wpdb->delete( $wpdb->prefix . 'lms_subjects', array( 'id' => $subject_id ), array( '%d' ) );
+    }
+
+    public function get_all_students( $limit = 150, $offset = 0 ) {
+        global $wpdb;
+        return $wpdb->get_results( $wpdb->prepare(
+            "SELECT s.*, u.user_email, u.display_name FROM {$wpdb->prefix}lms_students s
+            LEFT JOIN {$wpdb->users} u ON s.user_id = u.ID
+            ORDER BY s.created_at DESC LIMIT %d OFFSET %d",
+            $limit, $offset
+        ) );
+    }
+
+    public function get_all_teachers( $limit = 150, $offset = 0 ) {
+        global $wpdb;
+        return $wpdb->get_results( $wpdb->prepare(
+            "SELECT t.*, u.user_email, u.display_name FROM {$wpdb->prefix}lms_teachers t
+            LEFT JOIN {$wpdb->users} u ON t.user_id = u.ID
+            ORDER BY t.created_at DESC LIMIT %d OFFSET %d",
+            $limit, $offset
+        ) );
+    }
+
+    public function get_enrollments( $limit = 100, $offset = 0 ) {
+        global $wpdb;
+        return $wpdb->get_results( $wpdb->prepare(
+            "SELECT ss.id, ss.student_id, ss.subject_id, ss.enrollment_status, COALESCE(ss.created_at, ss.assigned_at) AS created_at, s.title AS subject_title, u.display_name AS student_name, u.user_email AS student_email
+            FROM {$wpdb->prefix}lms_student_subjects ss
+            LEFT JOIN {$wpdb->prefix}lms_subjects s ON ss.subject_id = s.id
+            LEFT JOIN {$wpdb->users} u ON ss.student_id = u.ID
+            ORDER BY COALESCE(ss.created_at, ss.assigned_at) DESC LIMIT %d OFFSET %d",
+            $limit, $offset
+        ) );
+    }
+
+    public function get_admin_attendance_summary() {
+        global $wpdb;
+        return array(
+            'records' => absint( $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}lms_attendance" ) ),
+            'students' => absint( $wpdb->get_var( "SELECT COUNT(DISTINCT user_id) FROM {$wpdb->prefix}lms_attendance" ) ),
+            'classes' => absint( $wpdb->get_var( "SELECT COUNT(DISTINCT class_id) FROM {$wpdb->prefix}lms_attendance" ) ),
+        );
+    }
+
+    public function get_recent_activity( $limit = 8 ) {
+        global $wpdb;
+        return $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$wpdb->prefix}lms_activity_logs ORDER BY created_at DESC LIMIT %d", $limit ) );
+    }
+
     public function get_live_classes_by_teacher( $teacher_id ) {
         global $wpdb;
 
@@ -487,6 +920,54 @@ class Edtech_DB {
         );
     }
 
+    public function get_all_live_classes( $limit = 50 ) {
+        global $wpdb;
+
+        return $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT lc.*, s.title AS subject_title, u.display_name AS teacher_name
+                FROM {$wpdb->prefix}lms_live_classes lc
+                LEFT JOIN {$wpdb->prefix}lms_subjects s ON lc.subject_id = s.id
+                LEFT JOIN {$wpdb->users} u ON lc.teacher_id = u.ID
+                ORDER BY COALESCE(lc.start_time, lc.scheduled_at, lc.created_at) DESC
+                LIMIT %d",
+                $limit
+            )
+        );
+    }
+
+    public function get_all_recorded_classes( $limit = 50 ) {
+        global $wpdb;
+
+        return $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT rc.*, s.title AS subject_title, u.display_name AS teacher_name
+                FROM {$wpdb->prefix}lms_recorded_classes rc
+                LEFT JOIN {$wpdb->prefix}lms_subjects s ON rc.subject_id = s.id
+                LEFT JOIN {$wpdb->users} u ON rc.teacher_id = u.ID
+                ORDER BY rc.created_at DESC
+                LIMIT %d",
+                absint( $limit )
+            )
+        );
+    }
+
+    public function get_attendance_records( $limit = 50 ) {
+        global $wpdb;
+
+        return $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT a.*, u.display_name AS student_name, lc.title AS class_title
+                FROM {$wpdb->prefix}lms_attendance a
+                LEFT JOIN {$wpdb->users} u ON a.user_id = u.ID
+                LEFT JOIN {$wpdb->prefix}lms_live_classes lc ON a.class_id = lc.id
+                ORDER BY COALESCE(a.attended_at, a.joined_at, a.created_at) DESC
+                LIMIT %d",
+                absint( $limit )
+            )
+        );
+    }
+
     public function count_student_subjects( $student_id ) {
         global $wpdb;
 
@@ -509,6 +990,74 @@ class Edtech_DB {
                     "SELECT COUNT(*) FROM {$wpdb->prefix}lms_attendance WHERE user_id = %d",
                     $student_id
                 )
+            )
+        );
+    }
+
+    public function get_student_attendance_records( $student_id, $limit = 50 ) {
+        global $wpdb;
+
+        return $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT a.*, lc.title AS class_title, s.title AS subject_title
+                FROM {$wpdb->prefix}lms_attendance a
+                LEFT JOIN {$wpdb->prefix}lms_live_classes lc ON a.class_id = lc.id
+                LEFT JOIN {$wpdb->prefix}lms_subjects s ON lc.subject_id = s.id
+                WHERE a.user_id = %d
+                ORDER BY a.attended_at DESC
+                LIMIT %d",
+                $student_id,
+                absint( $limit )
+            )
+        );
+    }
+
+    public function get_student_notifications( $student_id, $limit = 10 ) {
+        global $wpdb;
+
+        return $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT * FROM {$wpdb->prefix}lms_notifications
+                WHERE recipient_id = %d OR user_id = %d
+                ORDER BY created_at DESC
+                LIMIT %d",
+                $student_id,
+                $student_id,
+                absint( $limit )
+            )
+        );
+    }
+
+    public function get_student_tasks( $student_id, $type = 'assignment', $limit = 10 ) {
+        global $wpdb;
+
+        return $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT * FROM {$wpdb->prefix}lms_notifications
+                WHERE (recipient_id = %d OR user_id = %d)
+                AND type = %s
+                ORDER BY created_at DESC
+                LIMIT %d",
+                $student_id,
+                $student_id,
+                $type,
+                absint( $limit )
+            )
+        );
+    }
+
+    public function get_student_message_threads( $student_id, $limit = 20 ) {
+        global $wpdb;
+
+        return $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT * FROM {$wpdb->prefix}lms_notifications
+                WHERE recipient_id = %d
+                AND type IN ('message','chat','announcement')
+                ORDER BY created_at DESC
+                LIMIT %d",
+                $student_id,
+                absint( $limit )
             )
         );
     }
@@ -634,15 +1183,28 @@ class Edtech_DB {
             return true;
         }
 
-        return false !== $wpdb->insert(
-            "{$wpdb->prefix}lms_student_subjects",
-            array(
-                'student_id'  => $student_id,
-                'subject_id'  => $subject_id,
-                'assigned_at' => current_time( 'mysql' ),
-            ),
-            array( '%d', '%d', '%s' )
+        $data = array(
+            'student_id'         => $student_id,
+            'subject_id'         => $subject_id,
+            'enrollment_status'  => 'active',
+            'created_at'         => current_time( 'mysql' ),
+            'assigned_at'        => current_time( 'mysql' ),
         );
+        $formats = array(
+            'student_id'        => '%d',
+            'subject_id'        => '%d',
+            'enrollment_status' => '%s',
+            'created_at'        => '%s',
+            'assigned_at'       => '%s',
+        );
+
+        foreach ( array_keys( $data ) as $column ) {
+            if ( ! $this->column_exists( 'lms_student_subjects', $column ) ) {
+                unset( $data[ $column ], $formats[ $column ] );
+            }
+        }
+
+        return false !== $wpdb->insert( "{$wpdb->prefix}lms_student_subjects", $data, array_values( $formats ) );
     }
 
     public function assign_subject_to_teacher( $teacher_id, $subject_id ) {
@@ -667,15 +1229,108 @@ class Edtech_DB {
             return true;
         }
 
-        return false !== $wpdb->insert(
-            "{$wpdb->prefix}lms_teacher_subjects",
-            array(
+        $data = array(
+            'teacher_id'  => $teacher_id,
+            'subject_id'  => $subject_id,
+            'assigned_by' => get_current_user_id(),
+            'created_at'  => current_time( 'mysql' ),
+            'assigned_at' => current_time( 'mysql' ),
+        );
+        $formats = array(
+            'teacher_id'  => '%d',
+            'subject_id'  => '%d',
+            'assigned_by' => '%d',
+            'created_at'  => '%s',
+            'assigned_at' => '%s',
+        );
+
+        foreach ( array_keys( $data ) as $column ) {
+            if ( ! $this->column_exists( 'lms_teacher_subjects', $column ) ) {
+                unset( $data[ $column ], $formats[ $column ] );
+            }
+        }
+
+        $result = $wpdb->insert( "{$wpdb->prefix}lms_teacher_subjects", $data, array_values( $formats ) );
+
+        if ( false !== $result ) {
+            $wpdb->update(
+                "{$wpdb->prefix}lms_subjects",
+                array(
+                    'teacher_id' => $teacher_id,
+                    'updated_at' => current_time( 'mysql' ),
+                ),
+                array( 'id' => $subject_id ),
+                array( '%d', '%s' ),
+                array( '%d' )
+            );
+        }
+
+        return false !== $result;
+    }
+
+    public function get_subject_teacher_ids( $subject_id ) {
+        global $wpdb;
+
+        return array_map(
+            'absint',
+            $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT teacher_id FROM {$wpdb->prefix}lms_teacher_subjects WHERE subject_id = %d ORDER BY teacher_id ASC",
+                    absint( $subject_id )
+                )
+            )
+        );
+    }
+
+    public function sync_subject_teachers( $subject_id, $teacher_ids, $assigned_by = 0 ) {
+        global $wpdb;
+
+        $subject_id  = absint( $subject_id );
+        $teacher_ids = $this->normalize_user_ids( $teacher_ids );
+
+        if ( ! $subject_id ) {
+            return false;
+        }
+
+        $wpdb->delete( "{$wpdb->prefix}lms_teacher_subjects", array( 'subject_id' => $subject_id ), array( '%d' ) );
+
+        foreach ( $teacher_ids as $teacher_id ) {
+            $data = array(
                 'teacher_id'  => $teacher_id,
                 'subject_id'  => $subject_id,
+                'assigned_by' => absint( $assigned_by ),
+                'created_at'  => current_time( 'mysql' ),
                 'assigned_at' => current_time( 'mysql' ),
+            );
+            $formats = array(
+                'teacher_id'  => '%d',
+                'subject_id'  => '%d',
+                'assigned_by' => '%d',
+                'created_at'  => '%s',
+                'assigned_at' => '%s',
+            );
+
+            foreach ( array_keys( $data ) as $column ) {
+                if ( ! $this->column_exists( 'lms_teacher_subjects', $column ) ) {
+                    unset( $data[ $column ], $formats[ $column ] );
+                }
+            }
+
+            $wpdb->insert( "{$wpdb->prefix}lms_teacher_subjects", $data, array_values( $formats ) );
+        }
+
+        $wpdb->update(
+            "{$wpdb->prefix}lms_subjects",
+            array(
+                'teacher_id' => ! empty( $teacher_ids ) ? absint( $teacher_ids[0] ) : 0,
+                'updated_at' => current_time( 'mysql' ),
             ),
-            array( '%d', '%d', '%s' )
+            array( 'id' => $subject_id ),
+            array( '%d', '%s' ),
+            array( '%d' )
         );
+
+        return true;
     }
 
     public function get_students_for_subject_assignment() {
@@ -713,6 +1368,61 @@ class Edtech_DB {
                 WHERE ts.teacher_id = %d AND s.status IN ('active','approved')
                 ORDER BY s.title ASC",
                 $teacher_id
+            )
+        );
+    }
+
+    public function count_teacher_students( $teacher_id ) {
+        global $wpdb;
+
+        return absint(
+            $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT COUNT(DISTINCT ss.student_id)
+                    FROM {$wpdb->prefix}lms_student_subjects ss
+                    INNER JOIN {$wpdb->prefix}lms_teacher_subjects ts ON ss.subject_id = ts.subject_id
+                    WHERE ts.teacher_id = %d",
+                    $teacher_id
+                )
+            )
+        );
+    }
+
+    public function get_teacher_students( $teacher_id, $limit = 80 ) {
+        global $wpdb;
+
+        return $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT DISTINCT u.ID AS user_id, COALESCE(s.full_name, u.display_name) AS full_name, COALESCE(s.email, u.user_email) AS email, s.grade, s.city, s.status, sb.title AS subject_title
+                FROM {$wpdb->prefix}lms_student_subjects ss
+                INNER JOIN {$wpdb->prefix}lms_teacher_subjects ts ON ss.subject_id = ts.subject_id
+                INNER JOIN {$wpdb->prefix}lms_subjects sb ON ss.subject_id = sb.id
+                INNER JOIN {$wpdb->users} u ON ss.student_id = u.ID
+                LEFT JOIN {$wpdb->prefix}lms_students s ON ss.student_id = s.user_id
+                WHERE ts.teacher_id = %d
+                ORDER BY COALESCE(s.full_name, u.display_name) ASC
+                LIMIT %d",
+                $teacher_id,
+                absint( $limit )
+            )
+        );
+    }
+
+    public function get_teacher_attendance_records( $teacher_id, $limit = 80 ) {
+        global $wpdb;
+
+        return $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT a.*, u.display_name AS student_name, lc.title AS class_title, s.title AS subject_title
+                FROM {$wpdb->prefix}lms_attendance a
+                INNER JOIN {$wpdb->prefix}lms_live_classes lc ON a.class_id = lc.id
+                LEFT JOIN {$wpdb->prefix}lms_subjects s ON lc.subject_id = s.id
+                LEFT JOIN {$wpdb->users} u ON a.user_id = u.ID
+                WHERE lc.teacher_id = %d
+                ORDER BY a.attended_at DESC
+                LIMIT %d",
+                $teacher_id,
+                absint( $limit )
             )
         );
     }

@@ -15,6 +15,7 @@ class Edtech_Ajax {
         add_action( 'wp_ajax_nopriv_edtech_reset_password', array( $this, 'handle_reset_password' ) );
         add_action( 'wp_ajax_edtech_logout', array( $this, 'handle_logout' ) );
         add_action( 'wp_ajax_edtech_update_profile', array( $this, 'handle_update_profile' ) );
+        add_action( 'wp_ajax_edtech_update_student_profile', array( $this, 'handle_update_profile' ) );
 
         add_action( 'wp_ajax_edtech_approve_teacher', array( $this, 'approve_teacher' ) );
         add_action( 'wp_ajax_edtech_reject_teacher', array( $this, 'reject_teacher' ) );
@@ -22,7 +23,20 @@ class Edtech_Ajax {
         add_action( 'wp_ajax_edtech_approve_student', array( $this, 'approve_student' ) );
 
         add_action( 'wp_ajax_edtech_create_subject', array( $this, 'create_subject' ) );
+        add_action( 'wp_ajax_edtech_get_subject', array( $this, 'get_subject' ) );
+        add_action( 'wp_ajax_edtech_get_admin_options', array( $this, 'get_admin_options' ) );
+        add_action( 'wp_ajax_edtech_update_subject', array( $this, 'update_subject' ) );
+        add_action( 'wp_ajax_edtech_update_subject_status', array( $this, 'update_subject_status' ) );
+        add_action( 'wp_ajax_edtech_delete_subject', array( $this, 'delete_subject' ) );
+        add_action( 'wp_ajax_edtech_create_category', array( $this, 'create_category' ) );
+        add_action( 'wp_ajax_edtech_get_category', array( $this, 'get_category' ) );
+        add_action( 'wp_ajax_edtech_update_category', array( $this, 'update_category' ) );
+        add_action( 'wp_ajax_edtech_update_category_status', array( $this, 'update_category_status' ) );
+        add_action( 'wp_ajax_edtech_delete_category', array( $this, 'delete_category' ) );
+        add_action( 'wp_ajax_edtech_block_user', array( $this, 'block_user' ) );
+        add_action( 'wp_ajax_edtech_unblock_user', array( $this, 'unblock_user' ) );
         add_action( 'wp_ajax_edtech_assign_subject_to_student', array( $this, 'assign_subject_to_student' ) );
+        add_action( 'wp_ajax_edtech_student_enroll_subject', array( $this, 'assign_subject_to_student' ) );
         add_action( 'wp_ajax_edtech_assign_subject_to_teacher', array( $this, 'assign_subject_to_teacher' ) );
         add_action( 'wp_ajax_edtech_create_live_class', array( $this, 'create_live_class' ) );
         add_action( 'wp_ajax_edtech_mark_live', array( $this, 'mark_live_class' ) );
@@ -35,6 +49,7 @@ class Edtech_Ajax {
 
         add_action( 'wp_ajax_edtech_refresh_routes', array( $this, 'refresh_routes' ) );
         add_action( 'wp_ajax_edtech_reinitialize_platform', array( $this, 'reinitialize_platform' ) );
+        add_action( 'wp_ajax_edtech_save_platform_settings', array( $this, 'save_platform_settings' ) );
     }
 
     public function handle_register() {
@@ -128,23 +143,236 @@ class Edtech_Ajax {
     public function create_subject() {
         $this->verify_admin_request();
 
-        $title       = $this->plugin->helpers->sanitize_text( $_POST['title'] ?? '' );
-        $description = $this->plugin->helpers->sanitize_textarea( $_POST['description'] ?? '' );
-        $teacher_id  = absint( $_POST['teacher_id'] ?? 0 );
+        $data = $this->collect_subject_payload();
 
-        if ( '' === $title ) {
+        if ( '' === $data['title'] ) {
             wp_send_json_error( array( 'message' => 'Subject title is required.' ) );
         }
 
-        $success = $this->plugin->subjects->create_subject( $title, $description, $teacher_id );
-        if ( $success ) {
-            if ( $teacher_id ) {
-                $this->plugin->db->assign_subject_to_teacher( $teacher_id, $this->get_last_insert_id() );
-            }
-            wp_send_json_success( array( 'message' => 'Subject created successfully.' ) );
+        if ( ! $this->category_exists( $data['category_id'] ) ) {
+            wp_send_json_error( array( 'message' => 'Please choose a valid category or leave it uncategorized.' ) );
         }
 
-        wp_send_json_error( array( 'message' => 'Could not create subject.' ) );
+        if ( ! $this->teachers_are_approved( $data['teacher_ids'] ) ) {
+            wp_send_json_error( array( 'message' => 'Only approved teachers can be assigned to subjects.' ) );
+        }
+
+        $subject_id = $this->plugin->subjects->create_subject( $data );
+        if ( $subject_id ) {
+            wp_send_json_success(
+                array(
+                    'message'    => 'Subject created successfully.',
+                    'subject_id' => $subject_id,
+                )
+            );
+        }
+
+        wp_send_json_error( array( 'message' => 'Could not create subject. The slug may already exist or the database insert failed.' ) );
+    }
+
+    public function get_subject() {
+        $this->verify_admin_request();
+
+        $subject_id = absint( $_POST['subject_id'] ?? 0 );
+        if ( ! $subject_id ) {
+            wp_send_json_error( array( 'message' => 'Subject ID is required.' ) );
+        }
+
+        $subject = $this->plugin->db->get_subject_by_id( $subject_id );
+        if ( ! $subject ) {
+            wp_send_json_error( array( 'message' => 'Subject not found.' ) );
+        }
+
+        $subject->teacher_ids = $this->plugin->db->get_subject_teacher_ids( $subject_id );
+
+        wp_send_json_success( array( 'subject' => $subject ) );
+    }
+
+    public function get_admin_options() {
+        $this->verify_admin_request();
+
+        wp_send_json_success(
+            array(
+                'categories' => $this->plugin->db->get_subject_categories( true ),
+                'teachers'   => $this->plugin->db->get_teachers_for_subject_assignment(),
+            )
+        );
+    }
+
+    public function update_subject() {
+        $this->verify_admin_request();
+
+        $subject_id = absint( $_POST['subject_id'] ?? 0 );
+        $data       = $this->collect_subject_payload();
+
+        if ( ! $subject_id || '' === $data['title'] ) {
+            wp_send_json_error( array( 'message' => 'Subject ID and title are required.' ) );
+        }
+
+        if ( ! $this->category_exists( $data['category_id'] ) ) {
+            wp_send_json_error( array( 'message' => 'Please choose a valid category or leave it uncategorized.' ) );
+        }
+
+        if ( ! $this->teachers_are_approved( $data['teacher_ids'] ) ) {
+            wp_send_json_error( array( 'message' => 'Only approved teachers can be assigned to subjects.' ) );
+        }
+
+        if ( $this->plugin->subjects->update_subject( $subject_id, $data ) ) {
+            wp_send_json_success( array( 'message' => 'Subject updated successfully.' ) );
+        }
+
+        wp_send_json_error( array( 'message' => 'Could not update subject.' ) );
+    }
+
+    public function update_subject_status() {
+        $this->verify_admin_request();
+
+        $subject_id = absint( $_POST['subject_id'] ?? 0 );
+        $status     = sanitize_key( $_POST['status'] ?? '' );
+
+        if ( ! $subject_id || ! in_array( $status, array( 'active', 'inactive', 'draft' ), true ) ) {
+            wp_send_json_error( array( 'message' => 'Valid subject and status are required.' ) );
+        }
+
+        if ( $this->plugin->db->update_subject_status( $subject_id, $status ) ) {
+            wp_send_json_success( array( 'message' => 'Subject status updated.' ) );
+        }
+
+        wp_send_json_error( array( 'message' => 'Could not update subject status.' ) );
+    }
+
+    public function delete_subject() {
+        $this->verify_admin_request();
+
+        $subject_id = absint( $_POST['subject_id'] ?? 0 );
+        if ( ! $subject_id ) {
+            wp_send_json_error( array( 'message' => 'Subject ID is required.' ) );
+        }
+
+        if ( $this->plugin->db->delete_subject( $subject_id ) ) {
+            wp_send_json_success( array( 'message' => 'Subject deleted successfully.' ) );
+        }
+
+        wp_send_json_error( array( 'message' => 'Could not delete subject.' ) );
+    }
+
+    public function create_category() {
+        $this->verify_admin_request();
+
+        $data = array(
+            'name' => $this->plugin->helpers->sanitize_text( $_POST['name'] ?? '' ),
+            'slug' => sanitize_title( $_POST['slug'] ?? $_POST['name'] ?? '' ),
+            'status' => sanitize_text_field( $_POST['status'] ?? 'active' ),
+        );
+
+        if ( '' === $data['name'] ) {
+            wp_send_json_error( array( 'message' => 'Category name is required.' ) );
+        }
+
+        if ( $this->plugin->db->create_subject_category( $data ) ) {
+            wp_send_json_success( array( 'message' => 'Category created successfully.' ) );
+        }
+
+        wp_send_json_error( array( 'message' => 'Could not create category.' ) );
+    }
+
+    public function get_category() {
+        $this->verify_admin_request();
+
+        $category_id = absint( $_POST['category_id'] ?? 0 );
+        if ( ! $category_id ) {
+            wp_send_json_error( array( 'message' => 'Category ID is required.' ) );
+        }
+
+        $category = $this->plugin->db->get_subject_category_by_id( $category_id );
+        if ( ! $category ) {
+            wp_send_json_error( array( 'message' => 'Category not found.' ) );
+        }
+
+        wp_send_json_success( array( 'category' => $category ) );
+    }
+
+    public function update_category() {
+        $this->verify_admin_request();
+
+        $category_id = absint( $_POST['category_id'] ?? 0 );
+        $data = array(
+            'name' => $this->plugin->helpers->sanitize_text( $_POST['name'] ?? '' ),
+            'slug' => sanitize_title( $_POST['slug'] ?? $_POST['name'] ?? '' ),
+            'status' => sanitize_text_field( $_POST['status'] ?? 'active' ),
+        );
+
+        if ( ! $category_id || '' === $data['name'] ) {
+            wp_send_json_error( array( 'message' => 'Category ID and name are required.' ) );
+        }
+
+        if ( $this->plugin->db->update_subject_category( $category_id, $data ) ) {
+            wp_send_json_success( array( 'message' => 'Category updated successfully.' ) );
+        }
+
+        wp_send_json_error( array( 'message' => 'Could not update category.' ) );
+    }
+
+    public function update_category_status() {
+        $this->verify_admin_request();
+
+        $category_id = absint( $_POST['category_id'] ?? 0 );
+        $status      = sanitize_key( $_POST['status'] ?? '' );
+
+        if ( ! $category_id || ! in_array( $status, array( 'active', 'inactive' ), true ) ) {
+            wp_send_json_error( array( 'message' => 'Valid category and status are required.' ) );
+        }
+
+        if ( $this->plugin->db->update_subject_category_status( $category_id, $status ) ) {
+            wp_send_json_success( array( 'message' => 'Category status updated.' ) );
+        }
+
+        wp_send_json_error( array( 'message' => 'Could not update category status.' ) );
+    }
+
+    public function delete_category() {
+        $this->verify_admin_request();
+
+        $category_id = absint( $_POST['category_id'] ?? 0 );
+        if ( ! $category_id ) {
+            wp_send_json_error( array( 'message' => 'Category ID is required.' ) );
+        }
+
+        if ( $this->plugin->db->delete_subject_category( $category_id ) ) {
+            wp_send_json_success( array( 'message' => 'Category deleted successfully.' ) );
+        }
+
+        wp_send_json_error( array( 'message' => 'Could not delete category.' ) );
+    }
+
+    public function block_user() {
+        $this->verify_admin_request();
+
+        $user_id = absint( $_POST['user_id'] ?? 0 );
+        if ( ! $user_id ) {
+            wp_send_json_error( array( 'message' => 'User ID is required.' ) );
+        }
+
+        if ( $this->plugin->db->update_user_status( $user_id, 'suspended' ) ) {
+            wp_send_json_success( array( 'message' => 'User blocked successfully.' ) );
+        }
+
+        wp_send_json_error( array( 'message' => 'Could not block user.' ) );
+    }
+
+    public function unblock_user() {
+        $this->verify_admin_request();
+
+        $user_id = absint( $_POST['user_id'] ?? 0 );
+        if ( ! $user_id ) {
+            wp_send_json_error( array( 'message' => 'User ID is required.' ) );
+        }
+
+        if ( $this->plugin->db->update_user_status( $user_id, 'approved' ) ) {
+            wp_send_json_success( array( 'message' => 'User unblocked successfully.' ) );
+        }
+
+        wp_send_json_error( array( 'message' => 'Could not unblock user.' ) );
     }
 
     public function assign_subject_to_student() {
@@ -397,6 +625,83 @@ class Edtech_Ajax {
         }
 
         wp_send_json_success( array( 'message' => 'Platform reinitialized successfully.' ) );
+    }
+
+    public function save_platform_settings() {
+        $this->verify_admin_request();
+
+        $settings = array(
+            'platform_name' => sanitize_text_field( $_POST['platform_name'] ?? '' ),
+            'notification_email' => sanitize_email( $_POST['notification_email'] ?? '' ),
+            'max_students_per_subject' => absint( $_POST['max_students_per_subject'] ?? 50 ),
+            'default_class_duration' => absint( $_POST['default_class_duration'] ?? 60 ),
+        );
+
+        foreach ( $settings as $key => $value ) {
+            $this->plugin->db->set_setting( $key, $value );
+        }
+
+        wp_send_json_success( array( 'message' => 'Platform settings saved successfully.' ) );
+    }
+
+    private function collect_subject_payload() {
+        $teacher_ids = $this->get_teacher_ids_from_request();
+
+        return array(
+            'title'       => $this->plugin->helpers->sanitize_text( wp_unslash( $_POST['title'] ?? '' ) ),
+            'slug'        => sanitize_title( wp_unslash( $_POST['slug'] ?? $_POST['title'] ?? '' ) ),
+            'description' => $this->plugin->helpers->sanitize_textarea( wp_unslash( $_POST['description'] ?? '' ) ),
+            'category_id' => absint( $_POST['category_id'] ?? 0 ),
+            'teacher_id'  => ! empty( $teacher_ids ) ? absint( $teacher_ids[0] ) : 0,
+            'teacher_ids' => $teacher_ids,
+            'thumbnail'   => esc_url_raw( wp_unslash( $_POST['thumbnail'] ?? '' ) ),
+            'icon'        => $this->plugin->helpers->sanitize_text( wp_unslash( $_POST['icon'] ?? '' ) ),
+            'status'      => sanitize_key( wp_unslash( $_POST['status'] ?? 'active' ) ),
+            'created_by'  => get_current_user_id(),
+        );
+    }
+
+    private function get_teacher_ids_from_request() {
+        $raw_ids = $_POST['teacher_ids'] ?? array();
+
+        if ( ! is_array( $raw_ids ) ) {
+            $raw_ids = explode( ',', sanitize_text_field( wp_unslash( $raw_ids ) ) );
+        }
+
+        if ( ! empty( $_POST['teacher_id'] ) ) {
+            $raw_ids[] = $_POST['teacher_id'];
+        }
+
+        $teacher_ids = array_map( 'absint', $raw_ids );
+        $teacher_ids = array_filter( $teacher_ids );
+
+        return array_values( array_unique( $teacher_ids ) );
+    }
+
+    private function category_exists( $category_id ) {
+        $category_id = absint( $category_id );
+
+        if ( ! $category_id ) {
+            return true;
+        }
+
+        return (bool) $this->plugin->db->get_subject_category_by_id( $category_id );
+    }
+
+    private function teachers_are_approved( $teacher_ids ) {
+        if ( empty( $teacher_ids ) ) {
+            return true;
+        }
+
+        $approved = array_map( 'absint', wp_list_pluck( $this->plugin->db->get_teachers_for_subject_assignment(), 'user_id' ) );
+
+        foreach ( $teacher_ids as $teacher_id ) {
+            if ( ! in_array( absint( $teacher_id ), $approved, true ) ) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function verify_nonce() {

@@ -14,20 +14,45 @@ add_action( 'after_setup_theme', function() {
     ) );
 } );
 
+function edtech_is_admin_dashboard_route() {
+    if ( function_exists( 'get_query_var' ) ) {
+        $dashboard_type = get_query_var( 'edtech_dashboard' );
+        if ( $dashboard_type ) {
+            return in_array( $dashboard_type, array( 'admin', 'teacher', 'student', 'any' ), true );
+        }
+    }
+
+    return function_exists( 'is_page_template' ) && is_page_template( 'page-dashboard.php' );
+}
+
 add_action( 'wp_enqueue_scripts', function() {
     wp_enqueue_style( 'edtech-saas-fonts', 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Manrope:wght@600;700;800&display=swap', array(), null );
     wp_enqueue_style( 'bootstrap', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css', array(), '5.3.2' );
     wp_enqueue_style( 'edtech-saas-theme-style', get_stylesheet_uri(), array( 'bootstrap', 'edtech-saas-fonts' ), '1.2.0' );
     wp_enqueue_style( 'edtech-saas-icons', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css', array(), '6.5.0' );
+
+    if ( edtech_is_admin_dashboard_route() ) {
+        wp_enqueue_style( 'edtech-admin-panel', get_template_directory_uri() . '/assets/css/admin-panel.css', array( 'edtech-saas-theme-style' ), filemtime( get_template_directory() . '/assets/css/admin-panel.css' ) );
+    }
+
     wp_enqueue_script( 'bootstrap', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js', array( 'jquery' ), '5.3.2', true );
     wp_enqueue_script( 'edtech-theme-scripts', get_template_directory_uri() . '/assets/js/theme.js', array( 'jquery' ), '1.0.0', true );
+
+    if ( edtech_is_admin_dashboard_route() ) {
+        wp_enqueue_script( 'edtech-admin-panel', get_template_directory_uri() . '/assets/js/admin-panel.js', array( 'jquery', 'edtech-theme-scripts' ), filemtime( get_template_directory() . '/assets/js/admin-panel.js' ), true );
+    }
+
     wp_localize_script( 'edtech-theme-scripts', 'EDTECH_THEME', array(
         'ajax_url' => admin_url( 'admin-ajax.php' ),
+        'nonce' => wp_create_nonce( 'edtech_live_nonce' ),
     ) );
 } );
 
 add_filter( 'body_class', function( $classes ) {
     $classes[] = 'edtech-saas-theme';
+    if ( edtech_is_admin_dashboard_route() ) {
+        $classes[] = 'edtech-admin-dashboard';
+    }
     return $classes;
 } );
 
@@ -36,7 +61,7 @@ function edtech_render_navigation() {
     <nav class="navbar navbar-expand-xl navbar-light navbar-glass fixed-top shadow-sm eds-navbar-wrap">
         <div class="container eds-navbar-container">
             <a class="navbar-brand fw-bold eds-brand-wrap" href="<?php echo esc_url( home_url( '/' ) ); ?>">
-                <span class="text-primary">EdTech</span><span class="text-secondary">SaaS</span>
+                <?php echo edtech_saas_get_logo(); ?>
             </a>
             <button class="navbar-toggler eds-mobile-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#edtechNav"
                     aria-controls="edtechNav" aria-expanded="false" aria-label="Toggle navigation">
@@ -129,6 +154,9 @@ function edtech_default_menu()
     echo '</ul>';
 }
 function edtech_render_footer() {
+    if ( edtech_is_admin_dashboard_route() ) {
+        return;
+    }
     ?>
     <footer class="footer-glass py-5 mt-5 text-light">
         <div class="container">
@@ -171,4 +199,97 @@ function edtech_render_footer() {
         </div>
     </footer>
     <?php
+}
+
+// Customizer for Logo Management
+add_action( 'customize_register', 'edtech_saas_customize_register' );
+function edtech_saas_customize_register( $wp_customize ) {
+    // Logo Section
+    $wp_customize->add_section( 'edtech_saas_logo_section', array(
+        'title'       => __( 'EdTech SaaS Logo', 'edtech-saas-theme' ),
+        'description' => __( 'Manage the platform logo for branding.', 'edtech-saas-theme' ),
+        'priority'    => 30,
+    ) );
+
+    // Logo Upload
+    $wp_customize->add_setting( 'edtech_saas_logo', array(
+        'default'           => '',
+        'sanitize_callback' => 'esc_url_raw',
+        'transport'         => 'refresh',
+    ) );
+
+    $wp_customize->add_control( new WP_Customize_Image_Control( $wp_customize, 'edtech_saas_logo', array(
+        'label'    => __( 'Upload Logo', 'edtech-saas-theme' ),
+        'section'  => 'edtech_saas_logo_section',
+        'settings' => 'edtech_saas_logo',
+        'description' => __( 'Upload a logo image for the platform. Recommended size: 200x60px.', 'edtech-saas-theme' ),
+    ) ) );
+
+    // Logo Text
+    $wp_customize->add_setting( 'edtech_saas_logo_text', array(
+        'default'           => 'EdTech SaaS',
+        'sanitize_callback' => 'sanitize_text_field',
+        'transport'         => 'refresh',
+    ) );
+
+    $wp_customize->add_control( 'edtech_saas_logo_text', array(
+        'label'    => __( 'Logo Text', 'edtech-saas-theme' ),
+        'section'  => 'edtech_saas_logo_section',
+        'type'     => 'text',
+        'description' => __( 'Text to display if no logo image is uploaded.', 'edtech-saas-theme' ),
+    ) );
+
+    // Logo Width
+    $wp_customize->add_setting( 'edtech_saas_logo_width', array(
+        'default'           => '200',
+        'sanitize_callback' => 'absint',
+        'transport'         => 'refresh',
+    ) );
+
+    $wp_customize->add_control( 'edtech_saas_logo_width', array(
+        'label'    => __( 'Logo Width (px)', 'edtech-saas-theme' ),
+        'section'  => 'edtech_saas_logo_section',
+        'type'     => 'number',
+        'input_attrs' => array(
+            'min' => 50,
+            'max' => 400,
+        ),
+    ) );
+
+    // Logo Height
+    $wp_customize->add_setting( 'edtech_saas_logo_height', array(
+        'default'           => '60',
+        'sanitize_callback' => 'absint',
+        'transport'         => 'refresh',
+    ) );
+
+    $wp_customize->add_control( 'edtech_saas_logo_height', array(
+        'label'    => __( 'Logo Height (px)', 'edtech-saas-theme' ),
+        'section'  => 'edtech_saas_logo_section',
+        'type'     => 'number',
+        'input_attrs' => array(
+            'min' => 30,
+            'max' => 200,
+        ),
+    ) );
+}
+
+// Function to get logo
+function edtech_saas_get_logo() {
+    $logo_url = get_theme_mod( 'edtech_saas_logo', '' );
+    $logo_text = get_theme_mod( 'edtech_saas_logo_text', 'EdTech SaaS' );
+    $width = get_theme_mod( 'edtech_saas_logo_width', '200' );
+    $height = get_theme_mod( 'edtech_saas_logo_height', '60' );
+
+    if ( $logo_url ) {
+        return sprintf(
+            '<img src="%s" alt="%s" width="%d" height="%d" class="edtech-logo-img">',
+            esc_url( $logo_url ),
+            esc_attr( $logo_text ),
+            intval( $width ),
+            intval( $height )
+        );
+    } else {
+        return sprintf( '<span class="edtech-logo-text fw-bold">%s</span>', esc_html( $logo_text ) );
+    }
 }

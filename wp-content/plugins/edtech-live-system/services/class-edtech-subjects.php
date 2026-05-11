@@ -12,13 +12,16 @@ class Edtech_Subjects {
         $this->helpers = $helpers;
     }
 
-    public function create_subject( $title, $description, $teacher_id ) {
-        global $wpdb;
-        return $wpdb->insert( $wpdb->prefix . 'lms_subjects', array(
-            'title' => $this->helpers->sanitize_text( $title ),
-            'description' => $this->helpers->sanitize_textarea( $description ),
-            'teacher_id' => absint( $teacher_id ),
-        ), array( '%s', '%s', '%d' ) );
+    public function create_subject( $data ) {
+        return $this->db->create_subject( $data );
+    }
+
+    public function update_subject( $subject_id, $data ) {
+        return $this->db->update_subject( $subject_id, $data );
+    }
+
+    public function delete_subject( $subject_id ) {
+        return $this->db->delete_subject( $subject_id );
     }
 
     public function assign_student_to_subject( $student_id, $subject_id ) {
